@@ -10,7 +10,7 @@ st.set_page_config(page_title="Gyanin Academy", layout="centered")
 st.title("📄 Gyanin Academy Question Paper Generator")
 
 # LOAD DATA
-sheet_id = "Gyanin Question Generator"
+sheet_id = "1Qy6io_C1oO9iqyGyhxvFywoskc_vIEXvb1s5z5hjcicr"
 sheet_name = "QuestionBank"
 
 url = f"https://docs.google.com/spreadsheets/d/{Gyanin Question Generator}/gviz/tq?tqx=out:csv&sheet={1Qy6io_C1oO9iqyGyhxvFywoskc_vIEXvb1s5z5hjcic}"
