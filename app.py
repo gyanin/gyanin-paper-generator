@@ -10,7 +10,16 @@ st.set_page_config(page_title="Gyanin Academy", layout="centered")
 st.title("📄 Gyanin Academy Question Paper Generator")
 
 # LOAD DATA
-df = pd.read_csv("questionbank.csv")
+sheet_id = "Gyanin Question Generator"
+sheet_name = "QuestionBank"
+
+url = f"https://docs.google.com/spreadsheets/d/{Gyanin Question Generator}/gviz/tq?tqx=out:csv&sheet={1Qy6io_C1oO9iqyGyhxvFywoskc_vIEXvb1s5z5hjcic}"
+
+@st.cache_data
+def load_data():
+    return pd.read_csv(url)
+
+df = load_data()
 
 # FILTERS
 classes = sorted(df['Class'].unique())
