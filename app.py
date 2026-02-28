@@ -16,7 +16,7 @@ USERS = {
 }
 
 def login():
-    st.sidebar.title("🔐 Login")
+    st.sidebar.title("Login")
     u = st.sidebar.text_input("Username")
     p = st.sidebar.text_input("Password", type="password")
 
@@ -51,7 +51,7 @@ def load_data():
 df = load_data()
 
 # ================= UI =================
-st.title("🏫 Gyanin Academy - CBSE Paper Generator")
+st.title("🏫 Gyanin Academy - CBSE Generator")
 
 classes = sorted(df['Class'].astype(str).unique())
 subjects = sorted(df['Subject'].unique())
@@ -61,90 +61,90 @@ s = st.selectbox("Subject", subjects)
 
 filtered = df[(df['Class'].astype(str)==c) & (df['Subject']==s)]
 
-# ================= SMART SELECT =================
+# ================= SELECT FUNCTION =================
 def select_questions(df, qtype, count):
     subset = df[df['Question_Type'] == qtype]
+    return subset.sample(min(len(subset), count)).reset_index(drop=True)
 
-    easy = subset[subset['Difficulty']=="Easy"]
-    med = subset[subset['Difficulty']=="Medium"]
-    hard = subset[subset['Difficulty']=="Hard"]
-
-    result = pd.concat([
-        easy.sample(min(len(easy), count//3), replace=True),
-        med.sample(min(len(med), count//3), replace=True),
-        hard.sample(min(len(hard), count - 2*(count//3)), replace=True)
-    ])
-
-    return result.sample(frac=1)
-
-def generate_paper():
+# ================= GENERATE SET =================
+def generate_set():
     return {
-        "Section A (1×20=20)": select_questions(filtered,"MCQ",20),
-        "Section B (2×10=20)": select_questions(filtered,"SHORT",10),
-        "Section C (3×5=15)": select_questions(filtered,"3MARK",5),
-        "Section D (Case Study 2×5=10)": select_questions(filtered,"CASE",2),
-        "Section E (5×3=15)": select_questions(filtered,"LONG",3)
+        "MCQ": select_questions(filtered,"MCQ",20),
+        "SHORT": select_questions(filtered,"SHORT",10),
+        "3MARK": select_questions(filtered,"3MARK",5),
+        "CASE": select_questions(filtered,"CASE",2),
+        "LONG": select_questions(filtered,"LONG",3)
     }
 
 # ================= PDF =================
-def create_pdf(paper):
+def create_pdf(paper, set_name="A", answers=False):
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4)
     styles = getSampleStyleSheet()
     story = []
 
-    # Logo
     try:
         story.append(Image("logo.png", width=1.5*inch, height=1.5*inch))
     except:
         pass
 
-    # Header
-    story.append(Paragraph("<b>GYANIN ACADEMY</b>", styles['Title']))
-    story.append(Paragraph("8/2 Mandeville Garden, Kolkata - 700006", styles['Normal']))
-    story.append(Paragraph("Ph: 8334006669", styles['Normal']))
+    story.append(Paragraph(f"<b>GYANIN ACADEMY - SET {set_name}</b>", styles['Title']))
+    story.append(Paragraph(f"Class {c} - {s}", styles['Normal']))
+    story.append(Paragraph("Time: 3 Hours | Max Marks: 80", styles['Normal']))
     story.append(Spacer(1,10))
 
-    story.append(Paragraph("<b>CBSE Class {} - {}</b>".format(c,s), styles['Heading2']))
-    story.append(Paragraph("Time: 3 Hours     Maximum Marks: 80", styles['Normal']))
-    story.append(Spacer(1,10))
+    sections = {
+        "MCQ": "Section A (1×20)",
+        "SHORT": "Section B (2×10)",
+        "3MARK": "Section C (3×5)",
+        "CASE": "Section D",
+        "LONG": "Section E"
+    }
 
-    # Instructions
-    instructions = [
-        "All questions are compulsory.",
-        "Use of calculator is not permitted.",
-        "Marks are indicated against each question.",
-        "Attempt all sections."
-    ]
+    qnum = 1
 
-    story.append(Paragraph("<b>General Instructions:</b>", styles['Heading3']))
-    for ins in instructions:
-        story.append(Paragraph(f"- {ins}", styles['Normal']))
-
-    # Sections
-    for sec in paper:
+    for key in paper:
         story.append(Spacer(1,10))
-        story.append(Paragraph(f"<b>{sec}</b>", styles['Heading3']))
+        story.append(Paragraph(f"<b>{sections[key]}</b>", styles['Heading3']))
 
-        for i,row in enumerate(paper[sec].itertuples(),1):
-            story.append(Paragraph(f"Q{i}. {row.Question_Text}", styles['Normal']))
+        for row in paper[key].itertuples():
+            story.append(Paragraph(f"Q{qnum}. {row.Question_Text}", styles['Normal']))
 
-            if "MCQ" in sec:
+            if key == "MCQ":
                 story.append(Paragraph(f"A. {row.Option_A}", styles['Normal']))
                 story.append(Paragraph(f"B. {row.Option_B}", styles['Normal']))
                 story.append(Paragraph(f"C. {row.Option_C}", styles['Normal']))
                 story.append(Paragraph(f"D. {row.Option_D}", styles['Normal']))
 
+            if answers:
+                story.append(Paragraph(f"Answer: {row.Correct_Answer}", styles['Normal']))
+
+            qnum += 1
+
     doc.build(story)
     buffer.seek(0)
     return buffer
 
-# ================= GENERATE =================
-if st.button("Generate Full CBSE Paper"):
-    paper = generate_paper()
+# ================= BUTTON =================
+num_sets = st.selectbox("Number of Sets", [1,2,3])
 
-    st.success("✅ Full CBSE Paper Generated")
+if st.button("Generate Papers"):
 
-    pdf = create_pdf(paper)
+    for i in range(num_sets):
+        set_name = chr(65+i)  # A, B, C
+        paper = generate_set()
 
-    st.download_button("📥 Download CBSE Paper", pdf, "Gyanin_CBSE_Paper.pdf")
+        pdf = create_pdf(paper, set_name, answers=False)
+        ans_pdf = create_pdf(paper, set_name, answers=True)
+
+        st.download_button(
+            f"Download Set {set_name}",
+            pdf,
+            f"Paper_Set_{set_name}.pdf"
+        )
+
+        st.download_button(
+            f"Download Answer Key {set_name}",
+            ans_pdf,
+            f"Answer_Set_{set_name}.pdf"
+        )
