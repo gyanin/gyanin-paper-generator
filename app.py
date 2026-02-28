@@ -4,17 +4,20 @@ from datetime import datetime
 from io import BytesIO
 from reportlab.platypus import *
 from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet
 
 st.set_page_config(page_title="Gyanin ERP", layout="wide")
 
 # ================= LOGIN =================
 USERS = {
     "admin": {"password": "1234", "role": "admin"},
-    "student1": {"password": "1234", "role": "student"}
+    "teacher": {"password": "1234", "role": "teacher"},
+    "student": {"password": "1234", "role": "student"}
 }
 
 def login():
     st.sidebar.title("Login")
+
     u = st.sidebar.text_input("Username")
     p = st.sidebar.text_input("Password", type="password")
 
@@ -39,7 +42,7 @@ if not st.session_state["logged_in"]:
 else:
     logout()
 
-# ================= LOAD QUESTION DATA =================
+# ================= LOAD DATA =================
 sheet_id = "1Qy6io_C1oO9iqyGyhxvFywoskc_vIEXvb1s5z5hjcic"
 url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet=QuestionBank"
 
@@ -49,7 +52,7 @@ def load_data():
 
 df = load_data()
 
-# ================= SESSION STORAGE =================
+# ================= SESSION RESULTS =================
 if "results" not in st.session_state:
     st.session_state["results"] = pd.DataFrame(
         columns=["Student","Class","Subject","Score","Total","Date"]
@@ -69,6 +72,24 @@ filtered = df[(df['Class'].astype(str)==c) & (df['Subject']==s)]
 # ================= SAFE SAMPLE =================
 def safe_sample(data, n):
     return data.sample(min(len(data), n)) if len(data)>0 else pd.DataFrame()
+
+# ================= TEACHER PANEL =================
+if st.session_state["role"] in ["admin","teacher"]:
+
+    st.header("📄 Generate Question Paper")
+
+    if st.button("Generate Paper"):
+
+        mcq = safe_sample(filtered[filtered['Question_Type']=="MCQ"], 5)
+        short = safe_sample(filtered[filtered['Question_Type']=="SHORT"], 2)
+
+        st.subheader("Section A (MCQ)")
+        for _,row in mcq.iterrows():
+            st.write(row['Question_Text'])
+
+        st.subheader("Section B (Short)")
+        for _,row in short.iterrows():
+            st.write(row['Question_Text'])
 
 # ================= STUDENT PANEL =================
 if st.session_state["role"] == "student":
@@ -113,8 +134,6 @@ if st.session_state["role"] == "student":
             ignore_index=True
         )
 
-        st.success("Saved Successfully ✅")
-
 # ================= ADMIN DASHBOARD =================
 if st.session_state["role"] == "admin":
 
@@ -129,56 +148,3 @@ if st.session_state["role"] == "admin":
 
         st.metric("Total Students", results['Student'].nunique())
         st.metric("Average Score", round(results['Score'].mean(),2))
-
-        st.subheader("Subject Performance")
-        st.write(results.groupby("Subject")["Score"].mean())
-
-        st.subheader("Class Performance")
-        st.write(results.groupby("Class")["Score"].mean())
-
-    # ================= DOWNLOAD =================
-    st.header("⬇ Export Data")
-
-    csv = results.to_csv(index=False).encode('utf-8')
-
-    st.download_button(
-        "Download Results CSV",
-        csv,
-        "results.csv",
-        "text/csv"
-    )
-
-    # ================= REPORT CARD =================
-    st.header("📄 Report Card")
-
-    if not results.empty:
-        student = st.selectbox("Select Student", results['Student'].unique())
-
-        data = results[results['Student']==student]
-
-        def create_pdf():
-            buffer = BytesIO()
-            doc = SimpleDocTemplate(buffer, pagesize=A4)
-            story = []
-
-            story.append(Paragraph("<b>GYANIN ACADEMY REPORT CARD</b>", getSampleStyleSheet()['Title']))
-            story.append(Paragraph(f"Student: {student}", getSampleStyleSheet()['Normal']))
-
-            for _,row in data.iterrows():
-                story.append(Paragraph(
-                    f"{row['Subject']} - {row['Score']}/{row['Total']}",
-                    getSampleStyleSheet()['Normal']
-                ))
-
-            doc.build(story)
-            buffer.seek(0)
-            return buffer
-
-        if st.button("Generate Report"):
-            pdf = create_pdf()
-
-            st.download_button(
-                "Download Report Card",
-                pdf,
-                f"{student}_report.pdf"
-            )
