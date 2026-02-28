@@ -1,42 +1,37 @@
 import streamlit as st
 import pandas as pd
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
 from io import BytesIO
 from reportlab.platypus import *
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet
 
-st.set_page_config(page_title="Gyanin ERP", layout="centered")
+st.set_page_config(page_title="Gyanin ERP", layout="wide")
 
-# ===== GOOGLE SHEET CONFIG =====
-sheet_id = "1Qy6io_C1oO9iqyGyhxvFywoskc_vIEXvb1s5z5hjcic"
+# ===== GOOGLE AUTH =====
+scope = ["https://spreadsheets.google.com/feeds",
+         "https://www.googleapis.com/auth/drive"]
 
-qb_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet=QuestionBank"
-users_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet=Users"
+creds = ServiceAccountCredentials.from_json_keyfile_name("service_account.json", scope)
+client = gspread.authorize(creds)
 
-# ===== LOAD DATA =====
-@st.cache_data
-def load_data():
-    df = pd.read_csv(qb_url)
-    users_df = pd.read_csv(users_url)
+sheet = client.open("Gyanin Question Generator")
 
-    # Clean data
-    df['Class'] = df['Class'].astype(str)
-    users_df['Username'] = users_df['Username'].astype(str).str.strip()
-    users_df['Password'] = users_df['Password'].astype(str).str.strip()
+question_sheet = sheet.worksheet("QuestionBank")
+users_sheet = sheet.worksheet("Users")
 
-    return df, users_df
+df = pd.DataFrame(question_sheet.get_all_records())
+users_df = pd.DataFrame(users_sheet.get_all_records())
 
-df, users_df = load_data()
-
-# ===== LOGIN SYSTEM =====
+# ===== LOGIN =====
 def login():
-    st.sidebar.title("🔐 Login")
+    st.sidebar.title("Login")
 
     username = st.sidebar.text_input("Username").strip()
     password = st.sidebar.text_input("Password", type="password").strip()
 
     if st.sidebar.button("Login"):
-
         user = users_df[
             (users_df['Username'] == username) &
             (users_df['Password'] == password)
@@ -45,7 +40,6 @@ def login():
         if not user.empty:
             st.session_state['logged_in'] = True
             st.session_state['role'] = user.iloc[0]['Role']
-            st.success("Login Successful")
         else:
             st.error("Invalid Credentials")
 
@@ -53,7 +47,7 @@ def logout():
     if st.sidebar.button("Logout"):
         st.session_state['logged_in'] = False
 
-# ===== SESSION CONTROL =====
+# ===== SESSION =====
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
 
@@ -63,100 +57,83 @@ if not st.session_state['logged_in']:
 else:
     logout()
 
-# ===== MAIN TITLE =====
-st.title("📄 Gyanin Academy ERP System")
+st.title("🏫 Gyanin ERP System")
 
 # ===== ADMIN PANEL =====
-def admin_panel():
-    st.header("🛠 Admin Panel - Add Question")
+if st.session_state['role'] == "admin":
 
-    qid = st.text_input("Question ID")
-    qclass = st.text_input("Class")
-    subject = st.text_input("Subject")
-    chapter = st.text_input("Chapter")
+    st.subheader("Admin Panel")
 
-    qtype = st.selectbox("Type", ["MCQ","SHORT","3MARK","CASE","LONG"])
-    difficulty = st.selectbox("Difficulty", ["Easy","Medium","Hard"])
+    with st.expander("Add Question"):
+        data = [
+            st.text_input("Question ID"),
+            st.text_input("Class"),
+            st.text_input("Subject"),
+            st.text_input("Chapter"),
+            st.selectbox("Type", ["MCQ","SHORT","3MARK","CASE","LONG"]),
+            st.selectbox("Difficulty", ["Easy","Medium","Hard"]),
+            st.text_area("Question"),
+            st.text_input("Option A"),
+            st.text_input("Option B"),
+            st.text_input("Option C"),
+            st.text_input("Option D"),
+            st.text_input("Answer"),
+            st.text_input("Marks"),
+            st.text_area("Solution"),
+            0,
+            ""
+        ]
 
-    qtext = st.text_area("Question Text")
+        if st.button("Save Question"):
+            question_sheet.append_row(data)
+            st.success("Saved!")
 
-    optA = st.text_input("Option A")
-    optB = st.text_input("Option B")
-    optC = st.text_input("Option C")
-    optD = st.text_input("Option D")
+    st.subheader("Edit/Delete Questions")
+    st.dataframe(df)
 
-    answer = st.text_input("Correct Answer")
-    marks = st.text_input("Marks")
-    solution = st.text_area("Solution")
+# ===== TEACHER PANEL =====
+st.subheader("Generate Paper")
 
-    if st.button("Add Question"):
-        st.success("✅ Copy this data to Google Sheet")
+classes = sorted(df['Class'].astype(str).unique())
+subjects = sorted(df['Subject'].unique())
 
-        st.code(f"{qid}\t{qclass}\t{subject}\t{chapter}\t{qtype}\t{difficulty}\t{qtext}\t{optA}\t{optB}\t{optC}\t{optD}\t{answer}\t{marks}\t{solution}\t0\t")
+c = st.selectbox("Class", classes)
+s = st.selectbox("Subject", subjects)
 
-# ===== PAPER GENERATION =====
-def generate_paper(filtered_df):
-    return {
-        "MCQ": filtered_df[filtered_df['Question_Type']=="MCQ"].head(5),
-        "SHORT": filtered_df[filtered_df['Question_Type']=="SHORT"].head(2),
-        "3MARK": filtered_df[filtered_df['Question_Type']=="3MARK"].head(2),
-        "CASE": filtered_df[filtered_df['Question_Type']=="CASE"].head(1),
-        "LONG": filtered_df[filtered_df['Question_Type']=="LONG"].head(1)
-    }
+filtered = df[(df['Class'].astype(str)==c) & (df['Subject']==s)]
 
-# ===== PDF GENERATION =====
-def create_pdf(paper):
+if st.button("Generate"):
+    st.write(filtered.head(10))
+
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4)
     styles = getSampleStyleSheet()
     story = []
 
     story.append(Paragraph("<b>GYANIN ACADEMY</b>", styles['Title']))
-    story.append(Paragraph("8/2 Mandeville Garden, Kolkata - 700006", styles['Normal']))
-    story.append(Paragraph("Ph: 8334006669", styles['Normal']))
-    story.append(Spacer(1,10))
 
-    story.append(Paragraph("<b>Question Paper</b>", styles['Heading2']))
-    story.append(Spacer(1,10))
-
-    for sec in paper:
-        story.append(Paragraph(f"<b>{sec}</b>", styles['Heading3']))
-
-        for i,row in enumerate(paper[sec].itertuples(),1):
-            story.append(Paragraph(f"Q{i}. {row.Question_Text}", styles['Normal']))
-
-            if sec=="MCQ":
-                story.append(Paragraph(f"A. {row.Option_A}", styles['Normal']))
-                story.append(Paragraph(f"B. {row.Option_B}", styles['Normal']))
-                story.append(Paragraph(f"C. {row.Option_C}", styles['Normal']))
-                story.append(Paragraph(f"D. {row.Option_D}", styles['Normal']))
+    for i,row in enumerate(filtered.head(10).itertuples(),1):
+        story.append(Paragraph(f"Q{i}. {row.Question_Text}", styles['Normal']))
 
     doc.build(story)
     buffer.seek(0)
-    return buffer
 
-# ===== USER INTERFACE =====
-classes = sorted(df['Class'].unique())
-subjects = sorted(df['Subject'].unique())
+    st.download_button("Download PDF", buffer, "paper.pdf")
 
-selected_class = st.selectbox("Select Class", classes)
-selected_subject = st.selectbox("Select Subject", subjects)
+# ===== STUDENT PANEL =====
+st.subheader("Student Practice")
 
-filtered_df = df[
-    (df['Class'] == selected_class) &
-    (df['Subject'] == selected_subject)
-]
+mcq = df[df['Question_Type']=="MCQ"].sample(5)
 
-if st.button("Generate Paper"):
-    paper = generate_paper(filtered_df)
+score = 0
 
-    st.success("✅ Paper Generated")
+for i,row in enumerate(mcq.itertuples(),1):
+    st.write(row.Question_Text)
 
-    pdf = create_pdf(paper)
+    ans = st.radio(f"Q{i}", [row.Option_A,row.Option_B,row.Option_C,row.Option_D], key=i)
 
-    st.download_button("📥 Download PDF", pdf, "Gyanin_Paper.pdf")
+    if ans == row.Correct_Answer:
+        score += 1
 
-# ===== SHOW ADMIN PANEL =====
-if st.session_state['role'] == "admin":
-    st.divider()
-    admin_panel()
+if st.button("Submit Test"):
+    st.success(f"Score: {score}/5")
