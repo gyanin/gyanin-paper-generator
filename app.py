@@ -4,11 +4,41 @@ from reportlab.platypus import *
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet
 from io import BytesIO
+# ===== LOGIN SYSTEM =====
+def login(users_df):
+    st.sidebar.title("Login")
+
+    username = st.sidebar.text_input("Username")
+    password = st.sidebar.text_input("Password", type="password")
+
+    if st.sidebar.button("Login"):
+        user = users_df[
+            (users_df['Username'] == username) &
+            (users_df['Password'] == password)
+        ]
+
+        if not user.empty:
+            st.session_state['logged_in'] = True
+            st.session_state['role'] = user.iloc[0]['Role']
+            st.success("Login Successful")
+        else:
+            st.error("Invalid Credentials")
+
+def logout():
+    if st.sidebar.button("Logout"):
+        st.session_state['logged_in'] = False
 
 st.set_page_config(page_title="Gyanin Academy", layout="centered")
 
 st.title("📄 Gyanin Academy Question Paper Generator")
+if 'logged_in' not in st.session_state:
+    st.session_state['logged_in'] = False
 
+if not st.session_state['logged_in']:
+    login(users_df)
+    st.stop()
+else:
+    logout()
 # ===== GOOGLE SHEET CONNECTION =====
 sheet_id = "1Qy6io_C1oO9iqyGyhxvFywoskc_vIEXvb1s5z5hjcic"
 sheet_name = "QuestionBank"
@@ -111,3 +141,5 @@ if st.button("Generate Paper"):
         pdf,
         "Gyanin_Paper.pdf"
     )
+users_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet=Users"
+users_df = pd.read_csv(users_url)
