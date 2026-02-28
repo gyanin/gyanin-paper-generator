@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import random
 from io import BytesIO
 from reportlab.platypus import *
 from reportlab.lib.pagesizes import A4
@@ -8,7 +9,7 @@ from reportlab.lib.units import inch
 
 st.set_page_config(page_title="Gyanin ERP", layout="centered")
 
-# ================= LOGIN (SAFE METHOD) =================
+# ================= LOGIN =================
 USERS = {
     "admin": {"password": "1234", "role": "admin"},
     "teacher": {"password": "1234", "role": "teacher"}
@@ -16,14 +17,13 @@ USERS = {
 
 def login():
     st.sidebar.title("🔐 Login")
-
-    user = st.sidebar.text_input("Username")
-    pwd = st.sidebar.text_input("Password", type="password")
+    u = st.sidebar.text_input("Username")
+    p = st.sidebar.text_input("Password", type="password")
 
     if st.sidebar.button("Login"):
-        if user in USERS and USERS[user]["password"] == pwd:
+        if u in USERS and USERS[u]["password"] == p:
             st.session_state["logged_in"] = True
-            st.session_state["role"] = USERS[user]["role"]
+            st.session_state["role"] = USERS[u]["role"]
         else:
             st.error("Invalid Login")
 
@@ -51,7 +51,7 @@ def load_data():
 df = load_data()
 
 # ================= UI =================
-st.title("🏫 Gyanin Academy ERP")
+st.title("🏫 Gyanin Academy - CBSE Paper Generator")
 
 classes = sorted(df['Class'].astype(str).unique())
 subjects = sorted(df['Subject'].unique())
@@ -61,14 +61,29 @@ s = st.selectbox("Subject", subjects)
 
 filtered = df[(df['Class'].astype(str)==c) & (df['Subject']==s)]
 
-# ================= PAPER =================
+# ================= SMART SELECT =================
+def select_questions(df, qtype, count):
+    subset = df[df['Question_Type'] == qtype]
+
+    easy = subset[subset['Difficulty']=="Easy"]
+    med = subset[subset['Difficulty']=="Medium"]
+    hard = subset[subset['Difficulty']=="Hard"]
+
+    result = pd.concat([
+        easy.sample(min(len(easy), count//3), replace=True),
+        med.sample(min(len(med), count//3), replace=True),
+        hard.sample(min(len(hard), count - 2*(count//3)), replace=True)
+    ])
+
+    return result.sample(frac=1)
+
 def generate_paper():
     return {
-        "Section A (1×20)": filtered[filtered['Question_Type']=="MCQ"].head(5),
-        "Section B (2 Marks)": filtered[filtered['Question_Type']=="SHORT"].head(2),
-        "Section C (3 Marks)": filtered[filtered['Question_Type']=="3MARK"].head(2),
-        "Section D (Case Study)": filtered[filtered['Question_Type']=="CASE"].head(1),
-        "Section E (Long Answer)": filtered[filtered['Question_Type']=="LONG"].head(1)
+        "Section A (1×20=20)": select_questions(filtered,"MCQ",20),
+        "Section B (2×10=20)": select_questions(filtered,"SHORT",10),
+        "Section C (3×5=15)": select_questions(filtered,"3MARK",5),
+        "Section D (Case Study 2×5=10)": select_questions(filtered,"CASE",2),
+        "Section E (5×3=15)": select_questions(filtered,"LONG",3)
     }
 
 # ================= PDF =================
@@ -78,32 +93,33 @@ def create_pdf(paper):
     styles = getSampleStyleSheet()
     story = []
 
-    # LOGO
+    # Logo
     try:
         story.append(Image("logo.png", width=1.5*inch, height=1.5*inch))
     except:
         pass
 
-    # HEADER
+    # Header
     story.append(Paragraph("<b>GYANIN ACADEMY</b>", styles['Title']))
     story.append(Paragraph("8/2 Mandeville Garden, Kolkata - 700006", styles['Normal']))
     story.append(Paragraph("Ph: 8334006669", styles['Normal']))
     story.append(Spacer(1,10))
 
-    story.append(Paragraph("<b>CBSE Pattern Question Paper</b>", styles['Heading2']))
+    story.append(Paragraph("<b>CBSE Class {} - {}</b>".format(c,s), styles['Heading2']))
     story.append(Paragraph("Time: 3 Hours     Maximum Marks: 80", styles['Normal']))
-
     story.append(Spacer(1,10))
 
     # Instructions
-    story.append(Paragraph("<b>General Instructions:</b>", styles['Heading3']))
-    ins = [
+    instructions = [
         "All questions are compulsory.",
         "Use of calculator is not permitted.",
-        "Draw neat diagrams wherever required."
+        "Marks are indicated against each question.",
+        "Attempt all sections."
     ]
-    for i in ins:
-        story.append(Paragraph(f"- {i}", styles['Normal']))
+
+    story.append(Paragraph("<b>General Instructions:</b>", styles['Heading3']))
+    for ins in instructions:
+        story.append(Paragraph(f"- {ins}", styles['Normal']))
 
     # Sections
     for sec in paper:
@@ -123,18 +139,12 @@ def create_pdf(paper):
     buffer.seek(0)
     return buffer
 
-# ================= ADMIN PANEL =================
-if st.session_state["role"] == "admin":
-    st.header("🛠 Admin Panel")
-
-    st.info("Add questions directly in Google Sheet for now (safe mode)")
-
 # ================= GENERATE =================
-if st.button("Generate Paper"):
+if st.button("Generate Full CBSE Paper"):
     paper = generate_paper()
 
-    st.success("Paper Generated")
+    st.success("✅ Full CBSE Paper Generated")
 
     pdf = create_pdf(paper)
 
-    st.download_button("📥 Download PDF", pdf, "Gyanin_Paper.pdf")
+    st.download_button("📥 Download CBSE Paper", pdf, "Gyanin_CBSE_Paper.pdf")
