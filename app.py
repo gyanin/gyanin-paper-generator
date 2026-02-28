@@ -16,7 +16,7 @@ scope = ["https://spreadsheets.google.com/feeds",
 creds = ServiceAccountCredentials.from_json_keyfile_name("service_account.json", scope)
 client = gspread.authorize(creds)
 
-sheet = client.open("Gyanin Question Generator")
+sheet = client.open_by_key("1Qy6io_C1oO9iqyGyhxvFywoskc_vIEXvb1s5z5hjcic")
 
 question_sheet = sheet.worksheet("QuestionBank")
 users_sheet = sheet.worksheet("Users")
