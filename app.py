@@ -1,28 +1,19 @@
-import streamlit as st
-import pandas as pd
-import gspread
-from oauth2client.service_account import ServiceAccountCredentials
-from io import BytesIO
-from reportlab.platypus import *
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.styles import getSampleStyleSheet
+sheet_id = "1Qy6io_C1oO9iqyGyhxvFywoskc_vIEXvb1s5z5hjcic"
 
-st.set_page_config(page_title="Gyanin ERP", layout="wide")
+question_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid=0"
+users_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid=1"
 
-# ===== GOOGLE AUTH =====
-scope = ["https://spreadsheets.google.com/feeds",
-         "https://www.googleapis.com/auth/drive"]
+@st.cache_data
+def load_data():
+    df = pd.read_csv(question_url)
+    users_df = pd.read_csv(users_url)
 
-creds = ServiceAccountCredentials.from_json_keyfile_name("service_account.json", scope)
-client = gspread.authorize(creds)
+    users_df['Username'] = users_df['Username'].astype(str).str.strip()
+    users_df['Password'] = users_df['Password'].astype(str).str.strip()
 
-sheet = client.open_by_key("1Qy6io_C1oO9iqyGyhxvFywoskc_vIEXvb1s5z5hjcic")
+    return df, users_df
 
-question_sheet = sheet.worksheet("QuestionBank")
-users_sheet = sheet.worksheet("Users")
-
-df = pd.DataFrame(question_sheet.get_all_records())
-users_df = pd.DataFrame(users_sheet.get_all_records())
+df, users_df = load_data()
 
 # ===== LOGIN =====
 def login():
