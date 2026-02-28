@@ -1,7 +1,8 @@
 import streamlit as st
 import pandas as pd
-import random
 from datetime import datetime
+
+st.set_page_config(page_title="Gyanin ERP", layout="centered")
 
 # ================= GOOGLE SHEET =================
 sheet_id = "1Qy6io_C1oO9iqyGyhxvFywoskc_vIEXvb1s5z5hjcic"
@@ -20,77 +21,92 @@ def load_data():
 
 df, results = load_data()
 
-st.title("🏫 Gyanin ERP - Student System")
+st.title("🏫 Gyanin ERP System")
 
 # ================= FILTER =================
 classes = sorted(df['Class'].astype(str).unique())
 subjects = sorted(df['Subject'].unique())
 
-c = st.selectbox("Class", classes)
-s = st.selectbox("Subject", subjects)
+c = st.selectbox("Select Class", classes)
+s = st.selectbox("Select Subject", subjects)
 
 filtered = df[(df['Class'].astype(str)==c) & (df['Subject']==s)]
 
+# ================= SAFE SAMPLE FUNCTION =================
+def safe_sample(data, n):
+    if len(data) == 0:
+        return pd.DataFrame()
+    return data.sample(min(len(data), n))
+
 # ================= STUDENT INFO =================
+st.header("🧑‍🎓 Student Test")
+
 student_name = st.text_input("Enter Student Name")
 
-# ================= TEST =================
-st.header("🧑‍🎓 Practice Test")
-
-mcq = filtered[filtered['Question_Type']=="MCQ"].sample(5)
+# ================= MCQ TEST =================
+mcq_data = filtered[filtered['Question_Type']=="MCQ"]
+mcq = safe_sample(mcq_data, 5)
 
 score = 0
 answers = []
 
-for i,row in enumerate(mcq.itertuples(),1):
-    st.write(f"Q{i}. {row.Question_Text}")
+if mcq.empty:
+    st.warning("No MCQ questions available for this selection")
+else:
+    for i,row in enumerate(mcq.itertuples(),1):
+        st.write(f"Q{i}. {row.Question_Text}")
 
-    ans = st.radio(
-        f"Choose answer",
-        [row.Option_A,row.Option_B,row.Option_C,row.Option_D],
-        key=i
-    )
+        ans = st.radio(
+            f"Choose answer for Q{i}",
+            [row.Option_A,row.Option_B,row.Option_C,row.Option_D],
+            key=i
+        )
 
-    answers.append((row.Correct_Answer, ans))
+        answers.append((row.Correct_Answer, ans))
 
 # ================= SUBMIT =================
 if st.button("Submit Test"):
 
-    for correct, given in answers:
-        if correct == given:
-            score += 1
+    if not student_name:
+        st.error("Please enter student name")
+    elif mcq.empty:
+        st.error("No questions available")
+    else:
+        score = sum(1 for correct, given in answers if correct == given)
 
-    st.success(f"Score: {score}/5")
+        st.success(f"Score: {score}/{len(mcq)}")
 
-    # SAVE RESULT (display only)
-    new_row = {
-        "StudentName": student_name,
-        "Class": c,
-        "Subject": s,
-        "Score": score,
-        "Total": 5,
-        "Date": datetime.now().strftime("%Y-%m-%d")
-    }
+        # Show row to copy
+        date = datetime.now().strftime("%Y-%m-%d")
 
-    st.write("Result Saved (copy to sheet):")
-    st.code(f"{student_name}\t{c}\t{s}\t{score}\t5\t{new_row['Date']}")
+        st.info("Copy this and paste into StudentResults sheet")
+        st.code(f"{student_name}\t{c}\t{s}\t{score}\t{len(mcq)}\t{date}")
 
 # ================= ANALYTICS =================
-st.header("📊 Student Analytics")
+st.header("📊 Analytics")
 
-if not results.empty:
-
+if results.empty:
+    st.warning("No results data available yet")
+else:
     st.subheader("All Results")
     st.dataframe(results)
 
-    avg_score = results['Score'].mean()
-    st.metric("Average Score", round(avg_score,2))
+    # Average score
+    avg = results['Score'].mean()
+    st.metric("Average Score", round(avg,2))
 
-    st.subheader("Performance by Subject")
+    # Subject-wise
+    st.subheader("Subject Performance")
     st.write(results.groupby("Subject")["Score"].mean())
 
-# ================= DIFFICULTY TRACK =================
-st.header("🧠 Difficulty Tracking")
+    # Class-wise
+    st.subheader("Class Performance")
+    st.write(results.groupby("Class")["Score"].mean())
 
-diff_stats = df.groupby("Difficulty").size()
-st.bar_chart(diff_stats)
+# ================= DIFFICULTY =================
+st.header("🧠 Difficulty Distribution")
+
+if 'Difficulty' in df.columns:
+    st.bar_chart(df['Difficulty'].value_counts())
+else:
+    st.warning("No difficulty column found")
