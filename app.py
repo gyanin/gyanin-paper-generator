@@ -1,11 +1,9 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-import gspread
-from oauth2client.service_account import ServiceAccountCredentials
+from io import BytesIO
 from reportlab.platypus import *
 from reportlab.lib.pagesizes import A4
-from io import BytesIO
 
 st.set_page_config(page_title="Gyanin ERP", layout="wide")
 
@@ -41,23 +39,25 @@ if not st.session_state["logged_in"]:
 else:
     logout()
 
-# ================= GOOGLE =================
-scope = ["https://spreadsheets.google.com/feeds",
-         "https://www.googleapis.com/auth/drive"]
+# ================= LOAD QUESTION DATA =================
+sheet_id = "1Qy6io_C1oO9iqyGyhxvFywoskc_vIEXvb1s5z5hjcic"
+url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet=QuestionBank"
 
-creds = ServiceAccountCredentials.from_json_keyfile_name("service_account.json", scope)
-client = gspread.authorize(creds)
+@st.cache_data
+def load_data():
+    return pd.read_csv(url)
 
-sheet = client.open_by_key("1Qy6io_C1oO9iqyGyhxvFywoskc_vIEXvb1s5z5hjcic")
-q_sheet = sheet.worksheet("QuestionBank")
-r_sheet = sheet.worksheet("StudentResults")
+df = load_data()
 
-df = pd.DataFrame(q_sheet.get_all_records())
-results = pd.DataFrame(r_sheet.get_all_records())
-
-st.title("🏫 Gyanin ERP System")
+# ================= SESSION STORAGE =================
+if "results" not in st.session_state:
+    st.session_state["results"] = pd.DataFrame(
+        columns=["Student","Class","Subject","Score","Total","Date"]
+    )
 
 # ================= FILTER =================
+st.title("🏫 Gyanin Academy ERP")
+
 classes = sorted(df['Class'].astype(str).unique())
 subjects = sorted(df['Subject'].unique())
 
@@ -70,10 +70,10 @@ filtered = df[(df['Class'].astype(str)==c) & (df['Subject']==s)]
 def safe_sample(data, n):
     return data.sample(min(len(data), n)) if len(data)>0 else pd.DataFrame()
 
-# ================= STUDENT TEST =================
+# ================= STUDENT PANEL =================
 if st.session_state["role"] == "student":
 
-    st.header("🧑‍🎓 Test")
+    st.header("🧑‍🎓 Student Test")
 
     mcq = safe_sample(filtered[filtered['Question_Type']=="MCQ"], 5)
 
@@ -93,19 +93,25 @@ if st.session_state["role"] == "student":
 
             answers.append((row.Correct_Answer, ans))
 
-    if st.button("Submit"):
+    if st.button("Submit Test"):
+
         score = sum(1 for c,a in answers if c==a)
 
         st.success(f"Score: {score}/{len(mcq)}")
 
-        r_sheet.append_row([
-            st.session_state["user"],
-            c,
-            s,
-            score,
-            len(mcq),
-            datetime.now().strftime("%Y-%m-%d")
-        ])
+        new_row = {
+            "Student": st.session_state["user"],
+            "Class": c,
+            "Subject": s,
+            "Score": score,
+            "Total": len(mcq),
+            "Date": datetime.now().strftime("%Y-%m-%d")
+        }
+
+        st.session_state["results"] = pd.concat(
+            [st.session_state["results"], pd.DataFrame([new_row])],
+            ignore_index=True
+        )
 
         st.success("Saved Successfully ✅")
 
@@ -114,12 +120,14 @@ if st.session_state["role"] == "admin":
 
     st.header("📊 Admin Dashboard")
 
+    results = st.session_state["results"]
+
     if results.empty:
         st.warning("No results yet")
     else:
         st.dataframe(results)
 
-        st.metric("Total Students", results['StudentName'].nunique())
+        st.metric("Total Students", results['Student'].nunique())
         st.metric("Average Score", round(results['Score'].mean(),2))
 
         st.subheader("Subject Performance")
@@ -128,39 +136,49 @@ if st.session_state["role"] == "admin":
         st.subheader("Class Performance")
         st.write(results.groupby("Class")["Score"].mean())
 
+    # ================= DOWNLOAD =================
+    st.header("⬇ Export Data")
+
+    csv = results.to_csv(index=False).encode('utf-8')
+
+    st.download_button(
+        "Download Results CSV",
+        csv,
+        "results.csv",
+        "text/csv"
+    )
+
     # ================= REPORT CARD =================
-    st.header("📄 Generate Report Card")
+    st.header("📄 Report Card")
 
-    student_list = results['StudentName'].unique()
-    selected_student = st.selectbox("Select Student", student_list)
+    if not results.empty:
+        student = st.selectbox("Select Student", results['Student'].unique())
 
-    student_data = results[results['StudentName']==selected_student]
+        data = results[results['Student']==student]
 
-    def create_report():
-        buffer = BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=A4)
-        styles = getSampleStyleSheet()
-        story = []
+        def create_pdf():
+            buffer = BytesIO()
+            doc = SimpleDocTemplate(buffer, pagesize=A4)
+            story = []
 
-        story.append(Paragraph("<b>GYANIN ACADEMY REPORT CARD</b>", styles['Title']))
-        story.append(Paragraph(f"Student: {selected_student}", styles['Normal']))
-        story.append(Spacer(1,10))
+            story.append(Paragraph("<b>GYANIN ACADEMY REPORT CARD</b>", getSampleStyleSheet()['Title']))
+            story.append(Paragraph(f"Student: {student}", getSampleStyleSheet()['Normal']))
 
-        for _,row in student_data.iterrows():
-            story.append(Paragraph(
-                f"{row['Subject']} - Score: {row['Score']}/{row['Total']}",
-                styles['Normal']
-            ))
+            for _,row in data.iterrows():
+                story.append(Paragraph(
+                    f"{row['Subject']} - {row['Score']}/{row['Total']}",
+                    getSampleStyleSheet()['Normal']
+                ))
 
-        doc.build(story)
-        buffer.seek(0)
-        return buffer
+            doc.build(story)
+            buffer.seek(0)
+            return buffer
 
-    if st.button("Generate Report Card"):
-        pdf = create_report()
+        if st.button("Generate Report"):
+            pdf = create_pdf()
 
-        st.download_button(
-            "Download Report Card",
-            pdf,
-            f"{selected_student}_report.pdf"
-        )
+            st.download_button(
+                "Download Report Card",
+                pdf,
+                f"{student}_report.pdf"
+            )
